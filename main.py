@@ -26,6 +26,9 @@ GROQ_API_KEY = os.environ["GROQ_API_KEY"]              # کلید رایگان �
 GROQ_MODEL = "openai/gpt-oss-120b"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+# امضایی که آخر هر پست اضافه می‌شود
+CHANNEL_SIGNATURE = TELEGRAM_CHANNEL_ID.lstrip("@")
+
 # منابع خبری فرمول یک (RSS)
 RSS_FEEDS = [
     "https://www.motorsport.com/rss/f1/news/",

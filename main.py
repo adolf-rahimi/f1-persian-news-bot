@@ -1,13 +1,11 @@
 """
-بات خبری فرمول یک فارسی — نسخه رایگان
----------------------------------------
+بات خبری فرمول یک فارسی — نسخه رایگان (با بازنویسی خبری واقعی)
+------------------------------------------------------------------
 این نسخه هیچ هزینه‌ای ندارد:
-- به‌جای Claude API از کتابخانه رایگان ترجمه (Google Translate غیررسمی) استفاده می‌کند
+- از Groq API (رایگان، بدون نیاز به کارت اعتباری) برای بازنویسی خبری حرفه‌ای فارسی استفاده می‌کند
 - روی GitHub Actions اجرا می‌شود که برای این نوع کار کاملاً رایگان است
 
-نکته: چون از ترجمه ماشینی ساده استفاده می‌شود (نه بازنویسی هوشمند خبری)،
-کیفیت متن فارسی خوب و قابل‌فهم است ولی به روانی نسخه‌ی مبتنی بر Claude نیست.
-اگر بعداً خواستید کیفیت را ارتقا دهید، کافی‌ست بگویید تا نسخه‌ی AI را جایگزین کنم.
+کلید رایگان Groq را از https://console.groq.com بگیرید.
 """
 
 import os
@@ -17,25 +15,27 @@ import re
 import html
 import feedparser
 import requests
-from deep_translator import GoogleTranslator
 
 # ---------------------------------------------------------------------------
-# تنظیمات - این مقادیر باید به‌صورت Secret در گیت‌هاب ست شوند (رایگان)
+# تنظیمات - این مقادیر باید به‌صورت Secret در گیت‌هاب ست شوند
 # ---------------------------------------------------------------------------
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]      # توکن رایگان از BotFather
-TELEGRAM_CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]    # مثلا: @your_channel
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]              # کلید رایگان از console.groq.com
 
-# منابع خبری فرمول یک (RSS) — رایگان و بدون نیاز به کلید
+GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# منابع خبری فرمول یک (RSS)
 RSS_FEEDS = [
-    "https://www.autosport.com/rss/f1/news/",
     "https://www.motorsport.com/rss/f1/news/",
-    "https://feed.racefans.net/",
 ]
 
 POSTED_IDS_FILE = "posted_ids.json"
 MAX_STORED_IDS = 500
 
-translator = GoogleTranslator(source="en", target="fa")
+# هر اجرا فقط همین تعداد خبر جدید را پست می‌کند
+MAX_POSTS_PER_RUN = 1
 
 
 # ---------------------------------------------------------------------------
@@ -74,9 +74,10 @@ def fetch_latest_entries():
                     "title": entry.get("title", ""),
                     "summary": clean_html(
                         entry.get("summary", entry.get("description", ""))
-                    )[:500],
+                    ),
                     "link": entry.get("link", ""),
                     "source": feed.feed.get("title", feed_url),
+                    "published_parsed": entry.get("published_parsed"),
                 })
         except Exception as e:
             print(f"[هشدار] خطا در خواندن {feed_url}: {e}")
@@ -84,32 +85,39 @@ def fetch_latest_entries():
 
 
 # ---------------------------------------------------------------------------
-# ترجمه رایگان به فارسی و قالب‌بندی خبر
+# بازنویسی خبری کامل به فارسی با Groq (رایگان)
 # ---------------------------------------------------------------------------
-def translate_safe(text: str) -> str:
-    if not text:
-        return ""
-    try:
-        # گوگل‌ترنسلیت غیررسمی محدودیت طول دارد؛ در صورت نیاز تکه‌تکه ترجمه می‌کنیم
-        if len(text) > 450:
-            text = text[:450]
-        return translator.translate(text)
-    except Exception as e:
-        print(f"[هشدار] خطای ترجمه: {e}")
-        return text  # اگر ترجمه ناموفق بود، متن انگلیسی برگردانده می‌شود
+def rewrite_in_persian(entry: dict) -> str:
+    prompt = f"""تو یک خبرنگار حرفه‌ای فرمول یک هستی که برای یک کانال معتبر تلگرامی فارسی‌زبان می‌نویسی.
 
+خبر منبع (انگلیسی):
+عنوان: {entry['title']}
+متن: {entry['summary']}
 
-def format_message(entry: dict) -> str:
-    title_fa = translate_safe(entry["title"])
-    summary_fa = translate_safe(entry["summary"])
+این خبر را به یک مطلب خبری کامل، روان و حرفه‌ای فارسی بازنویسی کن. دقیقاً مثل سبک زیر:
 
-    message = (
-        f"🏎️ {title_fa}\n\n"
-        f"{summary_fa}\n\n"
-        f"منبع: {entry['source']}\n"
-        f"{entry['link']}"
-    )
-    return message
+- خط اول: یک جمله‌ی کوتاه و جذاب (می‌تواند نقل‌قول یا نکته‌ی کلیدی خبر باشد) که نقش تیتر را دارد
+- بعد از آن، بدون فاصله‌ی اضافه، متن کامل خبر در ۱ تا ۲ پاراگراف پیوسته می‌آید — نه خلاصه و نه ناقص، بلکه بازگویی کامل تمام نکات مهم خبر
+- نقل‌قول‌های مستقیم را داخل گیومه «» بیاور
+- نام افراد و تیم‌ها را به فارسی رایج بنویس (مثلا: مکس فرستاپن، رددبول، فرناندو آلونسو)
+- لحن کاملاً خبری، حرفه‌ای و بدون اغراق یا نظر شخصی
+- هیچ خط «منبع» یا لینکی در انتها نیاور — فقط خود متن خبر
+- هیچ توضیح اضافه، Markdown، یا مقدمه‌ای ننویس؛ فقط خروجی نهایی فارسی را بده"""
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.6,
+        "max_tokens": 900,
+    }
+    resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +128,7 @@ def post_to_telegram(text: str):
     payload = {
         "chat_id": TELEGRAM_CHANNEL_ID,
         "text": text,
-        "disable_web_page_preview": False,
+        "disable_web_page_preview": True,
     }
     resp = requests.post(url, data=payload, timeout=20)
     if not resp.ok:
@@ -136,7 +144,10 @@ def run_once():
     posted_ids = load_posted_ids()
     entries = fetch_latest_entries()
 
+    entries.sort(key=lambda e: e.get("published_parsed") or 0, reverse=True)
+
     new_entries = [e for e in entries if e["id"] and e["id"] not in posted_ids]
+    new_entries = new_entries[:MAX_POSTS_PER_RUN]
 
     if not new_entries:
         print("خبر جدیدی برای انتشار وجود ندارد.")
@@ -145,11 +156,11 @@ def run_once():
     for entry in new_entries:
         try:
             print(f"در حال پردازش: {entry['title']}")
-            message = format_message(entry)
-            post_to_telegram(message)
+            persian_text = rewrite_in_persian(entry)
+            post_to_telegram(persian_text)
             posted_ids.add(entry["id"])
             save_posted_ids(posted_ids)
-            time.sleep(3)
+            time.sleep(2)
         except Exception as e:
             print(f"[خطا] پردازش خبر ناموفق بود: {e}")
 

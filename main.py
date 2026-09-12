@@ -143,7 +143,7 @@ def rewrite_in_persian(entry: dict) -> str:
 * نام Max Verstappen را همیشه «مکس ورستپن» بنویس.
 * نام Isack Hadjar را همیشه «ایزاک هجار» بنویس.
 * برای نام‌های زیر (و مشابه آن‌ها) دقیقاً همین املای رایج فارسی رسانه‌های فرمول یک را به‌کار ببر تا اشتباه تایپی یا حدسی رخ ندهد:
-  Lewis Hamilton=لوئیس همیلتون, Charles Leclerc=شارل لوکلر, Carlos Sainz=کارلوس ساینز,
+  Lewis Hamilton=لوئیس همیلتون, Charles Leclerc=شارل لکلرک, Carlos Sainz=کارلوس ساینز,
   Lando Norris=لندو نوریس, Oscar Piastri=اسکار پیاستری, George Russell=جورج راسل,
   Fernando Alonso=فرناندو آلونسو, Yuki Tsunoda=یوکی تسونودا, Franco Colapinto=فرانکو کولاپینتو,
   Alexander Albon=الکساندر آلبون, Esteban Ocon=استبان اوکان, Pierre Gasly=پی‌یر گاسلی,
@@ -187,13 +187,20 @@ def rewrite_in_persian(entry: dict) -> str:
 # ---------------------------------------------------------------------------
 # قالب‌بندی: نقل‌قول‌های داخل « و » به جعبه‌ی رسمی Blockquote تلگرام تبدیل می‌شوند
 # ---------------------------------------------------------------------------
-def format_for_telegram(raw_text: str) -> str:
+def format_for_telegram(raw_text: str, article_link: str) -> str:
     safe_text = html.escape(raw_text)
 
     def to_blockquote(match):
         return f"<blockquote>{match.group(1).strip()}</blockquote>"
 
-    return re.sub(r"«(.+?)»", to_blockquote, safe_text, flags=re.S)
+    body = re.sub(r"«(.+?)»", to_blockquote, safe_text, flags=re.S)
+
+    # یک لینک نامرئی (با کاراکتر با-عرض-صفر) به ابتدای پیام اضافه می‌شود تا
+    # تلگرام خودش عکس خبر را از صفحه‌ی منبع به‌صورت پیش‌نمایش نشان دهد،
+    # بدون اینکه لینک قابل‌مشاهده باشد یا خود عکس را دانلود/آپلود کنیم.
+    hidden_preview = f'<a href="{html.escape(article_link)}">&#8203;</a>'
+
+    return hidden_preview + body
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +220,7 @@ def post_to_telegram(text: str):
         "chat_id": TELEGRAM_CHANNEL_ID,
         "text": text,
         "parse_mode": "HTML",
-        "disable_web_page_preview": True,
+        "disable_web_page_preview": False,  # اجازه می‌دهیم پیش‌نمایش (عکس خبر) نمایش داده شود
     }
     resp = requests.post(url, data=payload, timeout=20)
     if not resp.ok:
@@ -243,7 +250,7 @@ def run_once():
             print(f"در حال پردازش: {entry['title']}")
             entry["full_text"] = fetch_full_article(entry["link"])
             persian_text = rewrite_in_persian(entry)
-            message = format_for_telegram(persian_text)
+            message = format_for_telegram(persian_text, entry["link"])
             post_to_telegram(message)
             posted_ids.add(entry["id"])
             save_posted_ids(posted_ids)

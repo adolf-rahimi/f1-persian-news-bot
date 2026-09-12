@@ -2,8 +2,11 @@ name: F1 Persian News Bot
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # هر ۳۰ دقیقه اجرا می‌شود
-  workflow_dispatch: {}       # امکان اجرای دستی از تب Actions در گیت‌هاب
+    - cron: "0,20,40 * * * *"   # در دقیقه‌های ۰، ۲۰ و ۴۰ هر ساعت اجرا می‌شود
+  workflow_dispatch: {}          # امکان اجرای دستی از تب Actions در گیت‌هاب
+
+permissions:
+  contents: write   # اجازه‌ی صریح نوشتن، تا ذخیره‌ی posted_ids.json همیشه کار کند
 
 jobs:
   post-news:
@@ -32,5 +35,10 @@ jobs:
           git config user.name "f1-news-bot"
           git config user.email "actions@github.com"
           git add posted_ids.json || true
-          git diff --quiet --cached || git commit -m "به‌روزرسانی لیست خبرهای منتشرشده"
-          git push || true
+          if ! git diff --quiet --cached; then
+            git commit -m "به‌روزرسانی لیست خبرهای منتشرشده"
+            git pull --rebase origin main
+            git push
+          else
+            echo "تغییری در posted_ids.json نبود."
+          fi

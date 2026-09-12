@@ -24,7 +24,7 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]              # کلید رایگان از console.groq.com
 
-GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_MODEL = "qwen/qwen3.6-27b"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # امضایی که آخر هر پست اضافه می‌شود

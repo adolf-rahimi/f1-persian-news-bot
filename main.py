@@ -15,6 +15,7 @@ import re
 import html
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 
 # ---------------------------------------------------------------------------
 # تنظیمات - این مقادیر باید به‌صورت Secret در گیت‌هاب ست شوند
@@ -88,24 +89,65 @@ def fetch_latest_entries():
 
 
 # ---------------------------------------------------------------------------
+# گرفتن متن کامل خود صفحه‌ی خبر (نه فقط خلاصه‌ی RSS)
+# ---------------------------------------------------------------------------
+def fetch_full_article(url: str) -> str:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        )
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[هشدار] گرفتن صفحه‌ی کامل خبر ناموفق بود: {e}")
+        return ""
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # حذف بخش‌های غیرمرتبط (اسکریپت، استایل، منو، فوتر، تبلیغات)
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+        tag.decompose()
+
+    # اول تلاش برای پیدا کردن تگ <article>؛ اگر نبود، همه‌ی پاراگراف‌های صفحه
+    container = soup.find("article") or soup
+
+    paragraphs = [p.get_text(" ", strip=True) for p in container.find_all("p")]
+    text = " ".join(p for p in paragraphs if len(p) > 30)  # پاراگراف‌های خیلی کوتاه (اغلب تبلیغ/کپشن) حذف شود
+
+    # محدود کردن طول متن برای جلوگیری از عبور از محدودیت توکن مدل
+    return text[:6000]
+
+
+# ---------------------------------------------------------------------------
 # بازنویسی خبری کامل به فارسی با Groq (رایگان)
 # ---------------------------------------------------------------------------
 def rewrite_in_persian(entry: dict) -> str:
+    source_text = entry.get("full_text") or entry["summary"]
+
     prompt = f"""تو یک خبرنگار حرفه‌ای فرمول یک هستی که برای یک کانال معتبر تلگرامی فارسی‌زبان می‌نویسی.
 
-خبر منبع (انگلیسی):
+خبر منبع (انگلیسی) — تنها منبع مجاز اطلاعات توست:
 عنوان: {entry['title']}
-متن: {entry['summary']}
+متن کامل خبر: {source_text}
 
-این خبر را به یک مطلب خبری کامل، روان و حرفه‌ای فارسی بازنویسی کن. دقیقاً مثل سبک زیر:
+این خبر را کامل بخوان و به یک مطلب خبری فارسی، روان و خلاصه‌شده بازنویسی کن — یعنی تمام نکات مهم خبر (نه فقط جمله‌ی اول) را در قالب چند پاراگراف کوتاه فارسی پوشش بده. خروجی باید دقیقاً این ساختار را داشته باشد:
 
-- خط اول: یک جمله‌ی کوتاه و جذاب (می‌تواند نقل‌قول یا نکته‌ی کلیدی خبر باشد) که نقش تیتر را دارد
-- بعد از آن، بدون فاصله‌ی اضافه، متن کامل خبر در ۱ تا ۲ پاراگراف پیوسته می‌آید — نه خلاصه و نه ناقص، بلکه بازگویی کامل تمام نکات مهم خبر
-- نقل‌قول‌های مستقیم را داخل گیومه «» بیاور
-- نام افراد و تیم‌ها را به فارسی رایج بنویس (مثلا: مکس فرستاپن، رددبول، فرناندو آلونسو)
-- لحن کاملاً خبری، حرفه‌ای و بدون اغراق یا نظر شخصی
-- هیچ خط «منبع» یا لینکی در انتها نیاور — فقط خود متن خبر
-- هیچ توضیح اضافه، Markdown، یا مقدمه‌ای ننویس؛ فقط خروجی نهایی فارسی را بده"""
+خط ۱: یک تیتر کوتاه و خبری بر اساس همین خبر (بدون گیومه، بدون ایموجی)
+خط خالی
+سپس بدنه‌ی خبر در ۲ تا ۴ پاراگراف کوتاه که خلاصه‌ای کامل از کل متن منبع باشد
+
+قوانین حیاتی و غیرقابل‌نقض:
+- فقط از اطلاعاتی استفاده کن که عیناً در «متن کامل خبر» بالا آمده. هیچ جزئیات، عدد، تاریخ، مکان، یا نقل‌قولی که در متن منبع نیست، اضافه نکن — حتی اگر به نظر منطقی یا قابل‌قبول برسد
+- اگر متن منبع نقل‌قول مستقیم ندارد، تو هم نقل‌قول اختراع نکن — فقط رویداد را روایت کن
+- اگر نقل‌قول مستقیم در متن منبع وجود دارد، همان را (به‌صورت ترجمه‌شده و وفادار به معنا، نه کپی کلمه‌به‌کلمه‌ی انگلیسی) داخل گیومه‌ی « و » در یک پاراگراف جدا بیاور
+- این کار باید خلاصه‌سازی و بازنویسی کامل به زبان خودت باشد، نه ترجمه‌ی تحت‌اللفظی جمله‌به‌جمله
+- نام افراد و تیم‌ها را به فارسی رایج بنویس (مثلا: مکس فرستاپن، رددبول، فرناندو آلونسو، فرمول یک)
+- لحن کاملاً خبری، حرفه‌ای، بدون اغراق یا نظر شخصی
+- هیچ خط «منبع»، لینک، هشتگ یا ایموجی نیاور
+- هیچ توضیح اضافه، Markdown، یا مقدمه‌ای ننویس؛ فقط خروجی نهایی فارسی (تیتر + بدنه) را بده"""
 
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -114,13 +156,35 @@ def rewrite_in_persian(entry: dict) -> str:
     payload = {
         "model": GROQ_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.6,
-        "max_tokens": 900,
+        "temperature": 0.2,
+        "max_tokens": 1300,
     }
     resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
+
+
+# ---------------------------------------------------------------------------
+# قالب‌بندی HTML برای تلگرام (تیتر بولد + نقل‌قول‌ها به‌صورت Blockquote + امضا)
+# ---------------------------------------------------------------------------
+def format_for_telegram(raw_text: str) -> str:
+    parts = raw_text.strip().split("\n", 1)
+    title = parts[0].strip()
+    body = parts[1].strip() if len(parts) > 1 else ""
+
+    # اول کاراکترهای خاص HTML را امن می‌کنیم تا خطای پارس تلگرام رخ ندهد
+    title_safe = html.escape(title)
+    body_safe = html.escape(body)
+
+    # پاراگراف‌هایی که داخل گیومه‌ی « و » هستند را به Blockquote تبدیل می‌کنیم
+    def to_blockquote(match):
+        return f"<blockquote>{match.group(1).strip()}</blockquote>"
+
+    body_html = re.sub(r"«(.+?)»", to_blockquote, body_safe, flags=re.S)
+
+    message = f"<b>{title_safe}</b>\n\n{body_html}\n\n🏁 {CHANNEL_SIGNATURE} 🏁"
+    return message
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +195,7 @@ def post_to_telegram(text: str):
     payload = {
         "chat_id": TELEGRAM_CHANNEL_ID,
         "text": text,
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
     resp = requests.post(url, data=payload, timeout=20)
@@ -159,8 +224,10 @@ def run_once():
     for entry in new_entries:
         try:
             print(f"در حال پردازش: {entry['title']}")
+            entry["full_text"] = fetch_full_article(entry["link"])
             persian_text = rewrite_in_persian(entry)
-            post_to_telegram(persian_text)
+            message = format_for_telegram(persian_text)
+            post_to_telegram(message)
             posted_ids.add(entry["id"])
             save_posted_ids(posted_ids)
             time.sleep(2)

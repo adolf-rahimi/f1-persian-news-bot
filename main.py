@@ -161,11 +161,17 @@ def rewrite_in_persian(entry: dict) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.4,
         "max_tokens": 1300,
+        "reasoning_effort": "none",   # حالت «تفکر» مدل خاموش شود تا فقط خروجی نهایی برگردد
+        "reasoning_format": "hidden", # ایمنی اضافه: حتی اگر تفکری رخ داد، در خروجی نشان داده نشود
     }
     resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    output = data["choices"][0]["message"]["content"].strip()
+
+    # ایمنی اضافه: اگر با وجود تنظیمات بالا باز هم بخش «تفکر» در خروجی آمد، حذفش می‌کنیم
+    output = re.sub(r"<think>.*?</think>", "", output, flags=re.S).strip()
+    return output
 
 
 # ---------------------------------------------------------------------------

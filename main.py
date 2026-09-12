@@ -139,9 +139,19 @@ def rewrite_in_persian(entry: dict) -> str:
 * ابتدای خبر یک تیتر کوتاه و جذاب با 🚨 یا ایموجی مناسب قرار بده.
 * در ابتدای هر پاراگراف در صورت نیاز از یک ایموجی مرتبط استفاده کن، اما در استفاده از ایموجی زیاده‌روی نکن.
 * از بولد کردن متن استفاده نکن.
+* هر نقل‌قول مستقیم را همیشه بین گیومه‌ی « و » قرار بده (نه فقط با ایموجی 🗣، بلکه حتماً داخل « و » هم باشد) تا بعداً به‌صورت جعبه‌ی نقل‌قول جدا نمایش داده شود.
 * نام Max Verstappen را همیشه «مکس ورستپن» بنویس.
 * نام Isack Hadjar را همیشه «ایزاک هجار» بنویس.
-* نام تیم‌ها و اصطلاحات F1 را به شکل رایج و درست فارسی بنویس.
+* برای نام‌های زیر (و مشابه آن‌ها) دقیقاً همین املای رایج فارسی رسانه‌های فرمول یک را به‌کار ببر تا اشتباه تایپی یا حدسی رخ ندهد:
+  Lewis Hamilton=لوئیس همیلتون, Charles Leclerc=شارل لوکلر, Carlos Sainz=کارلوس ساینز,
+  Lando Norris=لندو نوریس, Oscar Piastri=اسکار پیاستری, George Russell=جورج راسل,
+  Fernando Alonso=فرناندو آلونسو, Yuki Tsunoda=یوکی تسونودا, Franco Colapinto=فرانکو کولاپینتو,
+  Alexander Albon=الکساندر آلبون, Esteban Ocon=استبان اوکان, Pierre Gasly=پی‌یر گاسلی,
+  Nico Hulkenberg=نیکو هولکنبرگ, Kimi Antonelli=کیمی آنتونلی, Liam Lawson=لیام لاوسون,
+  Arvid Lindblad=آروید لیندبلاد, Gabriel Bortoleto=گابریل بورتولتو,
+  Red Bull=رددبول, Ferrari=فراری, Mercedes=مرسدس, McLaren=مک‌لارن, Aston Martin=استون مارتین,
+  Williams=ویلیامز, Alpine=آلپاین, Haas=هاس, Racing Bulls=ریسینگ بولز, Sauber=زاوبر, Audi=آئودی
+  برای اسامی‌ای که در این لیست نیستند، از نزدیک‌ترین تلفظ رایج فارسی استفاده کن، نه حدس یا ترجمه‌ی اشتباه.
 * اگر بخشی از خبر برای مخاطب فارسی‌زبان نیاز به توضیح کوتاه دارد، آن را طبیعی و مختصر توضیح بده.
 * از اضافه کردن اطلاعاتی که در متن اصلی وجود ندارد خودداری کن.
 * متن باید کاملاً آماده کپی و انتشار در تلگرام باشد.
@@ -175,7 +185,19 @@ def rewrite_in_persian(entry: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ارسال پیام به کانال تلگرام (متن ساده، چون مدل خودش ایموجی و امضا را می‌سازد)
+# قالب‌بندی: نقل‌قول‌های داخل « و » به جعبه‌ی رسمی Blockquote تلگرام تبدیل می‌شوند
+# ---------------------------------------------------------------------------
+def format_for_telegram(raw_text: str) -> str:
+    safe_text = html.escape(raw_text)
+
+    def to_blockquote(match):
+        return f"<blockquote>{match.group(1).strip()}</blockquote>"
+
+    return re.sub(r"«(.+?)»", to_blockquote, safe_text, flags=re.S)
+
+
+# ---------------------------------------------------------------------------
+# ارسال پیام به کانال تلگرام
 # ---------------------------------------------------------------------------
 TELEGRAM_MAX_LEN = 4096
 
@@ -190,6 +212,7 @@ def post_to_telegram(text: str):
     payload = {
         "chat_id": TELEGRAM_CHANNEL_ID,
         "text": text,
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
     resp = requests.post(url, data=payload, timeout=20)
@@ -220,7 +243,8 @@ def run_once():
             print(f"در حال پردازش: {entry['title']}")
             entry["full_text"] = fetch_full_article(entry["link"])
             persian_text = rewrite_in_persian(entry)
-            post_to_telegram(persian_text)
+            message = format_for_telegram(persian_text)
+            post_to_telegram(message)
             posted_ids.add(entry["id"])
             save_posted_ids(posted_ids)
             time.sleep(2)

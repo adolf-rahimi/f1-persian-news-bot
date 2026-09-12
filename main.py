@@ -118,7 +118,7 @@ def fetch_full_article(url: str) -> str:
     text = " ".join(p for p in paragraphs if len(p) > 30)  # پاراگراف‌های خیلی کوتاه (اغلب تبلیغ/کپشن) حذف شود
 
     # محدود کردن طول متن برای جلوگیری از عبور از محدودیت توکن مدل
-    return text[:6000]
+    return text[:3500]
 
 
 # ---------------------------------------------------------------------------
@@ -179,12 +179,26 @@ def rewrite_in_persian(entry: dict) -> str:
         "model": GROQ_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.4,
-        "max_tokens": 1300,
+        "max_tokens": 1000,
         "reasoning_effort": "none",   # حالت «تفکر» مدل خاموش شود تا فقط خروجی نهایی برگردد
         "reasoning_format": "hidden", # ایمنی اضافه: حتی اگر تفکری رخ داد، در خروجی نشان داده نشود
     }
-    resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
+
+    # اگر به محدودیت نرخ Groq خوردیم (خطای 429)، به‌جای شکست فوری،
+    # طبق هدر Retry-After کمی صبر می‌کنیم و دوباره تلاش می‌کنیم
+    max_retries = 3
+    for attempt in range(max_retries):
+        resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
+        if resp.status_code == 429:
+            wait_seconds = float(resp.headers.get("retry-after", 10))
+            print(f"[هشدار] محدودیت نرخ Groq (429)؛ {wait_seconds:.0f} ثانیه صبر می‌کنیم (تلاش {attempt + 1}/{max_retries})")
+            time.sleep(wait_seconds + 1)
+            continue
+        resp.raise_for_status()
+        break
+    else:
+        raise RuntimeError("بعد از چند تلاش هم به محدودیت نرخ Groq خوردیم؛ این خبر رد شد.")
+
     data = resp.json()
     output = data["choices"][0]["message"]["content"].strip()
 

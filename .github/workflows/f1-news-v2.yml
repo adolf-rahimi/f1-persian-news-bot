@@ -1,0 +1,44 @@
+name: F1 Persian News Bot
+
+on:
+  schedule:
+    - cron: "3,23,43 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  post-news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: چک‌اوت مخزن
+        uses: actions/checkout@v4
+
+      - name: نصب پایتون
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: نصب کتابخانه‌ها
+        run: pip install -r requirements.txt
+
+      - name: اجرای بات
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python main.py
+
+      - name: ذخیره وضعیت خبرهای منتشرشده
+        run: |
+          git config user.name "f1-news-bot"
+          git config user.email "actions@github.com"
+          git add posted_ids.json || true
+          if ! git diff --quiet --cached; then
+            git commit -m "به‌روزرسانی لیست خبرهای منتشرشده"
+            git pull --rebase origin main
+            git push
+          else
+            echo "تغییری در posted_ids.json نبود."
+          fi

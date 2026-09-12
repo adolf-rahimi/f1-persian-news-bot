@@ -152,6 +152,15 @@ def rewrite_in_persian(entry: dict) -> str:
   Red Bull=رددبول, Ferrari=فراری, Mercedes=مرسدس, McLaren=مک‌لارن, Aston Martin=استون مارتین,
   Williams=ویلیامز, Alpine=آلپاین, Haas=هاس, Racing Bulls=ریسینگ بولز, Sauber=زاوبر, Audi=آئودی
   برای اسامی‌ای که در این لیست نیستند، از نزدیک‌ترین تلفظ رایج فارسی استفاده کن، نه حدس یا ترجمه‌ی اشتباه.
+* اصطلاحات تخصصی فرمول یک را دقیقاً با همین معادل رایج ترجمه کن، نه معنی عمومی یا تحت‌اللفظی کلمه:
+  circuit/track=پیست, lap=دور, pit stop=پیت‌استاپ, pit lane=لِین پیت, grid=گرید,
+  pole position=پول (پوزیشن اول), qualifying=تمرین رسمی (کوالیفای), practice session=جلسه‌ی تمرین,
+  paddock=پدوک, podium=سکو, DNF=انصراف از مسابقه, safety car=سیف‌تی‌کار, virtual safety car=سیف‌تی‌کار مجازی,
+  DRS=دی‌آراس, undercut=آندرکات, overcut=اورکات, tyre compound=ترکیب لاستیک, stint=استینت,
+  penalty=جریمه, drive-through penalty=جریمه‌ی درایو-ترو, yellow flag=پرچم زرد, red flag=پرچم قرمز,
+  free practice=تمرین آزاد, sprint race=مسابقه‌ی اسپرینت, constructors' championship=قهرمانی سازندگان,
+  drivers' championship=قهرمانی رانندگان
+  به‌خصوص مراقب کلمه‌ی «Circuit» باش: همیشه یعنی «پیست»، نه «مدار».
 * اگر بخشی از خبر برای مخاطب فارسی‌زبان نیاز به توضیح کوتاه دارد، آن را طبیعی و مختصر توضیح بده.
 * از اضافه کردن اطلاعاتی که در متن اصلی وجود ندارد خودداری کن.
 * متن باید کاملاً آماده کپی و انتشار در تلگرام باشد.
@@ -182,6 +191,27 @@ def rewrite_in_persian(entry: dict) -> str:
     # ایمنی اضافه: اگر با وجود تنظیمات بالا باز هم بخش «تفکر» در خروجی آمد، حذفش می‌کنیم
     output = re.sub(r"<think>.*?</think>", "", output, flags=re.S).strip()
     return output
+
+
+PERSIAN_CHARS = re.compile(r"[\u0600-\u06FF]")
+
+
+def is_mostly_persian(text: str) -> bool:
+    """بررسی می‌کند آیا خروجی واقعاً فارسی است یا مدل به اشتباه انگلیسی برگردانده."""
+    if not text:
+        return False
+    persian_count = len(PERSIAN_CHARS.findall(text))
+    return persian_count > len(text) * 0.3  # حداقل ۳۰٪ کاراکترها باید فارسی باشند
+
+
+def rewrite_in_persian_safe(entry: dict) -> str:
+    """rewrite_in_persian را صدا می‌زند و اگر خروجی فارسی نبود، یک‌بار دیگر تلاش می‌کند."""
+    for attempt in range(2):
+        output = rewrite_in_persian(entry)
+        if is_mostly_persian(output):
+            return output
+        print(f"[هشدار] خروجی مدل فارسی نبود (تلاش {attempt + 1})، دوباره تلاش می‌شود...")
+    raise RuntimeError("مدل نتوانست خروجی فارسی معتبر تولید کند؛ از پست‌شدن این خبر صرف‌نظر شد.")
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +279,7 @@ def run_once():
         try:
             print(f"در حال پردازش: {entry['title']}")
             entry["full_text"] = fetch_full_article(entry["link"])
-            persian_text = rewrite_in_persian(entry)
+            persian_text = rewrite_in_persian_safe(entry)
             message = format_for_telegram(persian_text, entry["link"])
             post_to_telegram(message)
             posted_ids.add(entry["id"])

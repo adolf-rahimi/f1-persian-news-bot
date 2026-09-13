@@ -24,7 +24,7 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]           # کلید رایگان از aistudio.google.com/apikey
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 # امضایی که آخر هر پست اضافه می‌شود

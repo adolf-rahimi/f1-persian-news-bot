@@ -2,10 +2,10 @@
 بات خبری فرمول یک فارسی — نسخه رایگان (با بازنویسی خبری واقعی)
 ------------------------------------------------------------------
 این نسخه هیچ هزینه‌ای ندارد:
-- از Groq API (رایگان، بدون نیاز به کارت اعتباری) برای بازنویسی خبری حرفه‌ای فارسی استفاده می‌کند
+- از Google Gemini API (رایگان، بدون نیاز به کارت اعتباری) برای بازنویسی خبری حرفه‌ای فارسی استفاده می‌کند
 - روی GitHub Actions اجرا می‌شود که برای این نوع کار کاملاً رایگان است
 
-کلید رایگان Groq را از https://console.groq.com بگیرید.
+کلید رایگان Gemini را از https://aistudio.google.com/apikey بگیرید.
 """
 
 import os
@@ -22,10 +22,10 @@ from bs4 import BeautifulSoup
 # ---------------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
-GROQ_API_KEY = os.environ["GROQ_API_KEY"]              # کلید رایگان از console.groq.com
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]           # کلید رایگان از aistudio.google.com/apikey
 
-GROQ_MODEL = "qwen/qwen3.6-27b"
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 # امضایی که آخر هر پست اضافه می‌شود
 CHANNEL_SIGNATURE = TELEGRAM_CHANNEL_ID.lstrip("@")
@@ -134,6 +134,8 @@ def rewrite_in_persian(entry: dict) -> str:
 * ترجمه روان، طبیعی و حرفه‌ای باشد؛ ترجمه تحت‌اللفظی نباشد.
 * لحن شبیه اخبار Motorsport.com و رسانه‌های معتبر فرمول یک باشد، نه لحن تلویزیونی یا عامیانه.
 * متن نهایی (بدون احتساب تیتر و امضا) باید دقیقاً بین ۵ تا ۹ خط کوتاه باشد. این محدودیت جدی و غیرقابل‌نقض است — بیشتر از این حجم قابل‌قبول نیست، حتی اگر خبر منبع طولانی باشد. فقط مهم‌ترین و جذاب‌ترین نکات خبر را انتخاب کن (مثلاً یک یا دو نقل‌قول، نتیجه‌ی اصلی، یک آمار کلیدی) و بقیه‌ی جزئیات را حذف کن — هدف یک پست کوتاه و خوش‌خوان برای کانال تلگرام است، نه گزارش کامل.
+* اگر متن منبع، مجموعه‌ای از واکنش‌ها/کامنت‌های غیررسمی کاربران (مثل ردیت یا شبکه‌های اجتماعی) بود، هیچ‌وقت هرکدام را جدا و کلمه‌به‌کلمه ترجمه و نقل‌قول نکن. در عوض، حس و جمع‌بندی کلی واکنش هواداران را در ۱ تا ۲ جمله‌ی روان به زبان خودت خلاصه کن؛ در این حالت هم محدودیت ۵ تا ۹ خط باید کاملاً رعایت شود.
+* در کل خروجی، حداکثر ۱ یا ۲ نقل‌قول مستقیم بیاور، نه بیشتر — حتی اگر خبر منبع نقل‌قول‌های زیادی داشته باشد.
 * نکات مهم خبر، اعداد، نتایج، نام رانندگان و تیم‌ها حذف نشوند.
 * اگر در خبر نقل‌قول مهمی وجود دارد، آن را با 🗣 و به فارسی روان داخل متن بیاور؛ نقل‌قول را بی‌دلیل تغییر نده.
 * ابتدای خبر یک تیتر کوتاه و جذاب با 🚨 یا ایموجی مناسب قرار بده.
@@ -171,39 +173,33 @@ def rewrite_in_persian(entry: dict) -> str:
 متن خبر:
 {full_source}"""
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
     payload = {
-        "model": GROQ_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.4,
-        "max_tokens": 600,
-        "reasoning_effort": "none",   # حالت «تفکر» مدل خاموش شود تا فقط خروجی نهایی برگردد
-        "reasoning_format": "hidden", # ایمنی اضافه: حتی اگر تفکری رخ داد، در خروجی نشان داده نشود
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 700,
+        },
     }
+    params = {"key": GEMINI_API_KEY}
 
-    # اگر به محدودیت نرخ Groq خوردیم (خطای 429)، به‌جای شکست فوری،
-    # طبق هدر Retry-After کمی صبر می‌کنیم و دوباره تلاش می‌کنیم
+    # اگر به محدودیت نرخ Gemini خوردیم (خطای 429)، به‌جای شکست فوری،
+    # کمی صبر می‌کنیم و دوباره تلاش می‌کنیم
     max_retries = 3
     for attempt in range(max_retries):
-        resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
+        resp = requests.post(GEMINI_URL, headers=headers, params=params, json=payload, timeout=60)
         if resp.status_code == 429:
-            wait_seconds = float(resp.headers.get("retry-after", 10))
-            print(f"[هشدار] محدودیت نرخ Groq (429)؛ {wait_seconds:.0f} ثانیه صبر می‌کنیم (تلاش {attempt + 1}/{max_retries})")
+            wait_seconds = float(resp.headers.get("retry-after", 15))
+            print(f"[هشدار] محدودیت نرخ Gemini (429)؛ {wait_seconds:.0f} ثانیه صبر می‌کنیم (تلاش {attempt + 1}/{max_retries})")
             time.sleep(wait_seconds + 1)
             continue
         resp.raise_for_status()
         break
     else:
-        raise RuntimeError("بعد از چند تلاش هم به محدودیت نرخ Groq خوردیم؛ این خبر رد شد.")
+        raise RuntimeError("بعد از چند تلاش هم به محدودیت نرخ Gemini خوردیم؛ این خبر رد شد.")
 
     data = resp.json()
-    output = data["choices"][0]["message"]["content"].strip()
-
-    # ایمنی اضافه: اگر با وجود تنظیمات بالا باز هم بخش «تفکر» در خروجی آمد، حذفش می‌کنیم
-    output = re.sub(r"<think>.*?</think>", "", output, flags=re.S).strip()
+    output = data["candidates"][0]["content"]["parts"][0]["text"].strip()
     return output
 
 

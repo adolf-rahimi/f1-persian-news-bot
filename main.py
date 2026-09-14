@@ -161,7 +161,7 @@ def rewrite_in_persian(entry: dict) -> str:
   Alexander Albon=الکساندر آلبون, Esteban Ocon=استبان اوکان, Pierre Gasly=پی‌یر گاسلی,
   Nico Hulkenberg=نیکو هولکنبرگ, Kimi Antonelli=کیمی آنتونلی, Liam Lawson=لیام لاوسون,
   Arvid Lindblad=آروید لیندبلاد, Gabriel Bortoleto=گابریل بورتولتو,
-  Red Bull=رددبول, Ferrari=فراری, Mercedes=مرسدس, McLaren=مک‌لارن, Aston Martin=استون مارتین,
+  Red Bull=ردبول, Ferrari=فراری, Mercedes=مرسدس, McLaren=مک‌لارن, Aston Martin=استون مارتین,
   Williams=ویلیامز, Alpine=آلپاین, Haas=هاس, Racing Bulls=ریسینگ بولز, Sauber=زاوبر, Audi=آئودی
   برای اسامی‌ای که در این لیست نیستند، از نزدیک‌ترین تلفظ رایج فارسی استفاده کن، نه حدس یا ترجمه‌ی اشتباه.
 * اصطلاحات تخصصی فرمول یک را دقیقاً با همین معادل رایج ترجمه کن، نه معنی عمومی یا تحت‌اللفظی کلمه:

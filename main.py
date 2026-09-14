@@ -89,9 +89,10 @@ def fetch_latest_entries():
 
 
 # ---------------------------------------------------------------------------
-# گرفتن متن کامل خود صفحه‌ی خبر (نه فقط خلاصه‌ی RSS)
+# گرفتن متن کامل خود صفحه‌ی خبر (نه فقط خلاصه‌ی RSS) + آدرس عکس اصلی خبر
 # ---------------------------------------------------------------------------
-def fetch_full_article(url: str) -> str:
+def fetch_article_content(url: str):
+    """متن کامل مقاله و آدرس عکس شاخص (og:image) را برمی‌گرداند: (text, image_url)"""
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -103,9 +104,16 @@ def fetch_full_article(url: str) -> str:
         resp.raise_for_status()
     except Exception as e:
         print(f"[هشدار] گرفتن صفحه‌ی کامل خبر ناموفق بود: {e}")
-        return ""
+        return "", ""
 
     soup = BeautifulSoup(resp.text, "html.parser")
+
+    # آدرس عکس اصلی خبر را از تگ استاندارد og:image می‌گیریم (همان چیزی که خود سایت
+    # برای نمایش در پیش‌نمایش شبکه‌های اجتماعی معرفی کرده است)
+    image_url = ""
+    og_image = soup.find("meta", property="og:image")
+    if og_image and og_image.get("content"):
+        image_url = og_image["content"]
 
     # حذف بخش‌های غیرمرتبط (اسکریپت، استایل، منو، فوتر، تبلیغات)
     for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
@@ -118,7 +126,7 @@ def fetch_full_article(url: str) -> str:
     text = " ".join(p for p in paragraphs if len(p) > 30)  # پاراگراف‌های خیلی کوتاه (اغلب تبلیغ/کپشن) حذف شود
 
     # محدود کردن طول متن برای جلوگیری از عبور از محدودیت توکن مدل
-    return text[:3500]
+    return text[:3500], image_url
 
 
 # ---------------------------------------------------------------------------
@@ -157,12 +165,12 @@ def rewrite_in_persian(entry: dict) -> str:
   Williams=ویلیامز, Alpine=آلپاین, Haas=هاس, Racing Bulls=ریسینگ بولز, Sauber=زاوبر, Audi=آئودی
   برای اسامی‌ای که در این لیست نیستند، از نزدیک‌ترین تلفظ رایج فارسی استفاده کن، نه حدس یا ترجمه‌ی اشتباه.
 * اصطلاحات تخصصی فرمول یک را دقیقاً با همین معادل رایج ترجمه کن، نه معنی عمومی یا تحت‌اللفظی کلمه:
-  circuit/track=پیست, lap=دور, pit stop=پیت‌استاپ, pit lane=لِین پیت, grid=گرید,
-  pole position=پول (پوزیشن اول), qualifying=تمرین رسمی (کوالیفای), practice session=جلسه‌ی تمرین,
+  circuit/track=پیست, lap=دور, pit stop=پیت‌استاپ, pit lane=پیت لین, grid=گرید,
+  pole position=پول (پوزیشن اول), qualifying=کوالیفای , practice session= تمرین,
   paddock=پدوک, podium=سکو, DNF=انصراف از مسابقه, safety car=سیف‌تی‌کار, virtual safety car=سیف‌تی‌کار مجازی,
   DRS=دی‌آراس, undercut=آندرکات, overcut=اورکات, tyre compound=ترکیب لاستیک, stint=استینت,
   penalty=جریمه, drive-through penalty=جریمه‌ی درایو-ترو, yellow flag=پرچم زرد, red flag=پرچم قرمز,
-  free practice=تمرین آزاد, sprint race=مسابقه‌ی اسپرینت, constructors' championship=قهرمانی سازندگان,
+  free practice=تمرین , sprint race= اسپرینت, constructors' championship=قهرمانی سازندگان,
   drivers' championship=قهرمانی رانندگان
   به‌خصوص مراقب کلمه‌ی «Circuit» باش: همیشه یعنی «پیست»، نه «مدار».
 * اگر بخشی از خبر برای مخاطب فارسی‌زبان نیاز به توضیح کوتاه دارد، آن را طبیعی و مختصر توضیح بده.
@@ -237,9 +245,17 @@ def format_for_telegram(raw_text: str, article_link: str) -> str:
 
     body = re.sub(r"«(.+?)»", to_blockquote, safe_text, flags=re.S)
 
+    # امضای انتهای پیام (Persian_Formula1) را به لینک واقعی کانال تبدیل می‌کنیم
+    channel_url = "https://t.me/Persian_Formula1"
+    body = body.replace(
+        CHANNEL_SIGNATURE,
+        f'<a href="{channel_url}">{CHANNEL_SIGNATURE}</a>',
+    )
+
     # یک لینک نامرئی (با کاراکتر با-عرض-صفر) به ابتدای پیام اضافه می‌شود تا
-    # تلگرام خودش عکس خبر را از صفحه‌ی منبع به‌صورت پیش‌نمایش نشان دهد،
-    # بدون اینکه لینک قابل‌مشاهده باشد یا خود عکس را دانلود/آپلود کنیم.
+    # تلگرام خودش عکس خبر را (این‌بار مستقیم از آدرس خود فایل عکس) به‌صورت
+    # پیش‌نمایش نشان دهد، بدون اینکه لینک قابل‌مشاهده باشد یا خود عکس را
+    # دانلود/آپلود کنیم.
     hidden_preview = f'<a href="{html.escape(article_link)}">&#8203;</a>'
 
     return hidden_preview + body
@@ -290,9 +306,10 @@ def run_once():
     for entry in new_entries:
         try:
             print(f"در حال پردازش: {entry['title']}")
-            entry["full_text"] = fetch_full_article(entry["link"])
+            entry["full_text"], entry["image_url"] = fetch_article_content(entry["link"])
             persian_text = rewrite_in_persian_safe(entry)
-            message = format_for_telegram(persian_text, entry["link"])
+            preview_url = entry["image_url"] or entry["link"]  # اگر عکس پیدا نشد، همان لینک صفحه
+            message = format_for_telegram(persian_text, preview_url)
             post_to_telegram(message)
             posted_ids.add(entry["id"])
             save_posted_ids(posted_ids)

@@ -161,16 +161,16 @@ def rewrite_in_persian(entry: dict) -> str:
   Alexander Albon=الکساندر آلبون, Esteban Ocon=استبان اوکان, Pierre Gasly=پی‌یر گاسلی,
   Nico Hulkenberg=نیکو هولکنبرگ, Kimi Antonelli=کیمی آنتونلی, Liam Lawson=لیام لاوسون,
   Arvid Lindblad=آروید لیندبلاد, Gabriel Bortoleto=گابریل بورتولتو,
-  Red Bull=ردبول, Ferrari=فراری, Mercedes=مرسدس, McLaren=مک‌لارن, Aston Martin=استون مارتین,
+  Red Bull=رددبول, Ferrari=فراری, Mercedes=مرسدس, McLaren=مک‌لارن, Aston Martin=استون مارتین,
   Williams=ویلیامز, Alpine=آلپاین, Haas=هاس, Racing Bulls=ریسینگ بولز, Sauber=زاوبر, Audi=آئودی
   برای اسامی‌ای که در این لیست نیستند، از نزدیک‌ترین تلفظ رایج فارسی استفاده کن، نه حدس یا ترجمه‌ی اشتباه.
 * اصطلاحات تخصصی فرمول یک را دقیقاً با همین معادل رایج ترجمه کن، نه معنی عمومی یا تحت‌اللفظی کلمه:
-  circuit/track=پیست, lap=دور, pit stop=پیت‌استاپ, pit lane=پیت لین, grid=گرید,
-  pole position=پول (پوزیشن اول), qualifying=کوالیفای , practice session= تمرین,
+  circuit/track=پیست, lap=دور, pit stop=پیت‌استاپ, pit lane=لِین پیت, grid=گرید,
+  pole position=پول (پوزیشن اول), qualifying=تمرین رسمی (کوالیفای), practice session=جلسه‌ی تمرین,
   paddock=پدوک, podium=سکو, DNF=انصراف از مسابقه, safety car=سیف‌تی‌کار, virtual safety car=سیف‌تی‌کار مجازی,
   DRS=دی‌آراس, undercut=آندرکات, overcut=اورکات, tyre compound=ترکیب لاستیک, stint=استینت,
   penalty=جریمه, drive-through penalty=جریمه‌ی درایو-ترو, yellow flag=پرچم زرد, red flag=پرچم قرمز,
-  free practice=تمرین , sprint race= اسپرینت, constructors' championship=قهرمانی سازندگان,
+  free practice=تمرین آزاد, sprint race=مسابقه‌ی اسپرینت, constructors' championship=قهرمانی سازندگان,
   drivers' championship=قهرمانی رانندگان
   به‌خصوص مراقب کلمه‌ی «Circuit» باش: همیشه یعنی «پیست»، نه «مدار».
 * اگر بخشی از خبر برای مخاطب فارسی‌زبان نیاز به توضیح کوتاه دارد، آن را طبیعی و مختصر توضیح بده.
@@ -193,20 +193,26 @@ def rewrite_in_persian(entry: dict) -> str:
     }
     params = {"key": GEMINI_API_KEY}
 
-    # اگر به محدودیت نرخ Gemini خوردیم (خطای 429)، به‌جای شکست فوری،
+    # اگر به محدودیت نرخ (429) یا خطای موقت سرور (500/503) خوردیم، به‌جای شکست فوری،
     # کمی صبر می‌کنیم و دوباره تلاش می‌کنیم
-    max_retries = 3
+    max_retries = 4
     for attempt in range(max_retries):
         resp = requests.post(GEMINI_URL, headers=headers, params=params, json=payload, timeout=60)
-        if resp.status_code == 429:
-            wait_seconds = float(resp.headers.get("retry-after", 15))
-            print(f"[هشدار] محدودیت نرخ Gemini (429)؛ {wait_seconds:.0f} ثانیه صبر می‌کنیم (تلاش {attempt + 1}/{max_retries})")
+
+        if resp.status_code in (429, 500, 502, 503):
+            default_wait = 15 if resp.status_code == 429 else 8
+            wait_seconds = float(resp.headers.get("retry-after", default_wait))
+            # با هر تلاش ناموفق، کمی بیشتر صبر می‌کنیم (backoff)
+            wait_seconds *= (attempt + 1)
+            reason = "محدودیت نرخ" if resp.status_code == 429 else "سرویس موقتاً در دسترس نیست"
+            print(f"[هشدار] {reason} (کد {resp.status_code})؛ {wait_seconds:.0f} ثانیه صبر می‌کنیم (تلاش {attempt + 1}/{max_retries})")
             time.sleep(wait_seconds + 1)
             continue
+
         resp.raise_for_status()
         break
     else:
-        raise RuntimeError("بعد از چند تلاش هم به محدودیت نرخ Gemini خوردیم؛ این خبر رد شد.")
+        raise RuntimeError("بعد از چند تلاش هم پاسخ معتبری از Gemini نگرفتیم؛ این خبر رد شد.")
 
     data = resp.json()
     output = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -237,7 +243,7 @@ def rewrite_in_persian_safe(entry: dict) -> str:
 # ---------------------------------------------------------------------------
 # قالب‌بندی: نقل‌قول‌های داخل « و » به جعبه‌ی رسمی Blockquote تلگرام تبدیل می‌شوند
 # ---------------------------------------------------------------------------
-def format_for_telegram(raw_text: str, article_link: str) -> str:
+def format_for_telegram(raw_text: str) -> str:
     safe_text = html.escape(raw_text)
 
     def to_blockquote(match):
@@ -252,13 +258,7 @@ def format_for_telegram(raw_text: str, article_link: str) -> str:
         f'<a href="{channel_url}">{CHANNEL_SIGNATURE}</a>',
     )
 
-    # یک لینک نامرئی (با کاراکتر با-عرض-صفر) به ابتدای پیام اضافه می‌شود تا
-    # تلگرام خودش عکس خبر را (این‌بار مستقیم از آدرس خود فایل عکس) به‌صورت
-    # پیش‌نمایش نشان دهد، بدون اینکه لینک قابل‌مشاهده باشد یا خود عکس را
-    # دانلود/آپلود کنیم.
-    hidden_preview = f'<a href="{html.escape(article_link)}">&#8203;</a>'
-
-    return hidden_preview + body
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@ def format_for_telegram(raw_text: str, article_link: str) -> str:
 TELEGRAM_MAX_LEN = 4096
 
 
-def post_to_telegram(text: str):
+def post_to_telegram(text: str, image_url: str = ""):
     if len(text) > TELEGRAM_MAX_LEN:
         print(f"[هشدار] پیام طولانی بود ({len(text)} کاراکتر)، کوتاه شد.")
         # کوتاه‌کردن از انتها و نگه‌داشتن امضا در صورت امکان
@@ -278,8 +278,18 @@ def post_to_telegram(text: str):
         "chat_id": TELEGRAM_CHANNEL_ID,
         "text": text,
         "parse_mode": "HTML",
-        "disable_web_page_preview": False,  # اجازه می‌دهیم پیش‌نمایش (عکس خبر) نمایش داده شود
     }
+
+    if image_url:
+        # پیش‌نمایش عکس، بالای متن نمایش داده شود (قابلیت رسمی تلگرام)
+        payload["link_preview_options"] = json.dumps({
+            "url": image_url,
+            "prefer_large_media": True,
+            "show_above_text": True,
+        })
+    else:
+        payload["disable_web_page_preview"] = True
+
     resp = requests.post(url, data=payload, timeout=20)
     if not resp.ok:
         print(f"[خطا] ارسال به تلگرام ناموفق بود: {resp.status_code} - {resp.text}")
@@ -308,9 +318,8 @@ def run_once():
             print(f"در حال پردازش: {entry['title']}")
             entry["full_text"], entry["image_url"] = fetch_article_content(entry["link"])
             persian_text = rewrite_in_persian_safe(entry)
-            preview_url = entry["image_url"] or entry["link"]  # اگر عکس پیدا نشد، همان لینک صفحه
-            message = format_for_telegram(persian_text, preview_url)
-            post_to_telegram(message)
+            message = format_for_telegram(persian_text)
+            post_to_telegram(message, entry["image_url"])
             posted_ids.add(entry["id"])
             save_posted_ids(posted_ids)
             time.sleep(2)
